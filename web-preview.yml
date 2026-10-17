@@ -1,0 +1,69 @@
+name: Web preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'web/**'
+      - 'pubspec.*'
+      - 'analysis_options.yaml'
+      - '.github/workflows/web-preview.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-preview
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate web wrapper
+        run: flutter create --platforms=web --project-name=chairside .
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Build for this repository's Pages address
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          if [[ "${REPOSITORY_NAME,,}" == "${REPOSITORY_OWNER,,}.github.io" ]]; then
+            preview_base="/"
+          else
+            preview_base="/${REPOSITORY_NAME}/"
+          fi
+          flutter build web --release --base-href "$preview_base"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy demo preview
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # Enable Settings > Pages > Source: GitHub Actions before running.
+  # Publishes fictional demo data only. No secrets or real customer data.
